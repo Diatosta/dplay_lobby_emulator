@@ -1,0 +1,186 @@
+import { Button, VerticalBox, HorizontalBox, ComboBox, LineEdit, GroupBox } from "std-widgets.slint";
+
+export enum AddressType {
+    TCP_IP,
+    Modem,
+    Serial,
+    None
+}
+
+export component AppWindow inherits Window {
+    in property <[string]> application_names;
+    in property <[string]> service_provider_names;
+    in-out property <string> selected_service_provider_name;
+    out property <string> player_name;
+    out property <string> session_name;
+    out property <bool> is_host: true;
+    out property <string> ip_address;
+    out property <string> phone_number;
+    in property <string> status;
+
+    in property <AddressType> address_type;
+
+    callback change-selected-application(string);
+    callback change-selected-service-provider(string);
+
+    min-width: 500px;
+
+    VerticalBox {
+        HorizontalBox {
+            alignment: stretch;
+            height: 50px;
+            Text {
+                vertical-alignment: center;
+                text: "Application";
+                width: 100px;
+            }
+            ComboBox {
+                enabled: application_names.length > 0;
+                model: application_names.length > 0 ? application_names : ["No applications"];
+                selected(application_name) => {
+                    root.change-selected-application(application-name);
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: stretch;
+            height: 50px;
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                text: "Connection";
+                width: 100px;
+            }
+            ComboBox {
+                enabled: service_provider_names.length > 0;
+                current-value: selected_service_provider_name;
+                model: service_provider_names.length > 0 ? service_provider_names : ["No connections"];
+                selected(service_provider_name) => {
+                    root.change-selected-service-provider(service_provider_name);
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: stretch;
+            height: 50px;
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                text: "Player name";
+                width: 100px;
+            }
+            LineEdit {
+            placeholder-text: "Enter player name";
+                edited(player_name) => {
+                    root.player_name = player_name;
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: stretch;
+            height: 50px;
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                text: "Session name";
+                width: 100px;
+            }
+            LineEdit {
+                placeholder-text: "Enter session name";
+                edited(session_name) => {
+                    root.session_name = session_name;
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: stretch;
+            height: 50px;
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                text: "Session creation";
+                width: 100px;
+            }
+            ComboBox {
+                model: ["Host", "Join"];
+                current-value: "Host";
+                selected(session_creation) => {
+                    root.is_host = session_creation == "Host";
+                }
+            }
+        }
+
+        VerticalLayout {
+            height: 150px;
+
+            HorizontalBox {
+                Text {
+                    horizontal-stretch: 0;
+                    vertical-alignment: center;
+                    text: "Address information";
+                }
+            }
+
+            HorizontalBox {
+                alignment: stretch;
+                height: 50px;
+                visible: root.address_type == AddressType.TCP_IP;
+
+                Text {
+                    horizontal-stretch: 0;
+                    vertical-alignment: center;
+                    text: "IP address";
+                    width: 100px;
+                }
+                LineEdit {
+                    placeholder-text: "Enter IP address";
+                    edited(ip_address) => {
+                        root.ip_address = ip_address;
+                    }
+                }
+            }
+
+            HorizontalBox {
+                alignment: stretch;
+                height: 50px;
+                visible: root.address_type == AddressType.Modem;
+
+                Text {
+                    horizontal-stretch: 0;
+                    vertical-alignment: center;
+                    text: "Phone number";
+                    width: 100px;
+                }
+                LineEdit {
+                    placeholder-text: "Enter phone number";
+                    edited(phone_number) => {
+                        root.phone_number = phone_number;
+                    }
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: stretch;
+            height: 50px;
+            Text {
+                horizontal-stretch: 0;
+                vertical-alignment: center;
+                text: "Status";
+                width: 100px;
+            }
+            LineEdit {
+                enabled: false;
+                text: status;
+            }
+            Button {
+                text: "Run Application";
+                width: 150px;
+            }
+        }
+    }
+}

@@ -16,6 +16,8 @@ use crate::dpcompound_address_element::DPCompoundAddressElement;
 use crate::dplconnection::{DPLConnection, DPOPEN_CREATE, DPOPEN_JOIN};
 use crate::dpsession_desc2::DPSessionDesc2;
 use std::ffi::c_void;
+use std::rc::Rc;
+use slint::{SharedString, VecModel};
 use windows::{
     core::*,
     Win32::{Foundation::*, System::Com::*},
@@ -27,13 +29,13 @@ const DPAID_SERVICE_PROVIDER: GUID = GUID::from_u128(0x07D916C0_E0AF_11cf_9C4E_0
 const DPAID_INET: GUID = GUID::from_u128(0xC4A54DA0_E0AF_11cf_9C4E_00A0C905425E);
 const SESSION_GUID: GUID = GUID::from_u128(0xA88F6634_2BA5_4986_99B2_A65CB5EC739C);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppInfo {
     app_name: String,
     app_guid: GUID,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServiceProvider {
     sp_name: String,
     sp_guid: GUID,
@@ -75,11 +77,6 @@ extern "system" fn enum_sp(
     unsafe {
         if let Some(lp_name) = lp_name.as_ref() {
             if let Ok(sp_name) = lp_name.short_name.to_string() {
-                // We only want TCP/IP service providers
-                if !sp_name.contains("TCP/IP") {
-                    return TRUE;
-                }
-
                 if let Some(sp_guid) = lp_guid_sp.as_ref() {
                     SERVICE_PROVIDERS.push(ServiceProvider {
                         sp_guid: *sp_guid,
@@ -188,8 +185,15 @@ fn create_addr(
     Ok((address, address_size))
 }
 
+slint::include_modules!();
 fn main() -> Result<()> {
+    let mut selected_app: Option<AppInfo> = None;
+    let mut selected_service_provider: Option<ServiceProvider> = None;
+    let mut is_host: bool = true;
+
     unsafe {
+        let app_window = AppWindow::new().unwrap();
+
         CoInitialize(None).ok()?;
 
         let dp: IDirectPlay4A = CoCreateInstance(&CLSID_DIRECT_PLAY, None, CLSCTX_ALL)?;
@@ -200,18 +204,59 @@ fn main() -> Result<()> {
 
         enum_connections(&dp, std::ptr::null(), enum_sp, HWND::default(), 0).ok()?;
 
-        APPLICATIONS.iter().for_each(|app| {
-            println!("App Name: {:?}, App GUID: {:?}", app.app_name, app.app_guid);
+        // Create a String array from APPLICATIONS app_name
+        let app_names: Vec<SharedString> = APPLICATIONS.iter().map(|app| app.app_name.clone().into()).collect();
+        let app_names = Rc::new(VecModel::from(app_names));
+        app_window.set_application_names(app_names.clone().into());
+
+        // Create a String array from SERVICE_PROVIDERS sp_name
+        let sp_names: Vec<SharedString> = SERVICE_PROVIDERS.iter().map(|sp| sp.sp_name.clone().into()).collect();
+        let first_sp_name = sp_names.get(0).unwrap().clone();
+        let sp_names = Rc::new(VecModel::from(sp_names));
+        app_window.set_service_provider_names(sp_names.clone().into());
+
+        app_window.set_selected_service_provider_name(first_sp_name.clone());
+        app_window.set_address_type(set_address_type(first_sp_name.as_str()));
+
+        app_window.on_change_selected_application(move |value| {
+            selected_app = get_selected_application(&value);
         });
 
-        SERVICE_PROVIDERS.iter().for_each(|sp| {
-            println!("SP Name: {:?}, SP GUID: {:?}", sp.sp_name, sp.sp_guid);
+        let app_window_weak = app_window.as_weak();
+
+        app_window.on_change_selected_service_provider(move |value| {
+            let app_window = app_window_weak.unwrap();
+            selected_service_provider = get_selected_service_provider(&value);
+            app_window.set_address_type(set_address_type(&value));
         });
 
-        launch_direct_play_application(dp_lobby)?;
+        //launch_direct_play_application(dp_lobby)?;
+
+        app_window.run().unwrap();
     }
 
     Ok(())
+}
+
+fn set_address_type(sp_name: &str) -> slint_generatedAppWindow::AddressType {
+    match sp_name.to_lowercase() {
+        x if x.contains("tcp") => slint_generatedAppWindow::AddressType::TCPIP,
+        x if x.contains("modem") => slint_generatedAppWindow::AddressType::Modem,
+        x if x.contains("serial") => slint_generatedAppWindow::AddressType::Serial,
+        _ => slint_generatedAppWindow::AddressType::None,
+    }
+}
+
+fn get_selected_application(app_name: &str) -> Option<AppInfo> {
+    unsafe {
+        APPLICATIONS.iter().find(|app| app.app_name == app_name).cloned()
+    }
+}
+
+fn get_selected_service_provider(sp_name: &str) -> Option<ServiceProvider> {
+    unsafe {
+        SERVICE_PROVIDERS.iter().find(|sp| sp.sp_name == sp_name).cloned()
+    }
 }
 
 fn launch_direct_play_application(dp_lobby: IDirectPlayLobby3A) -> Result<()> {
