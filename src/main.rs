@@ -11,6 +11,7 @@ use crate::direct_play_lobby_3::*;
 use crate::dplappinfo::DPLAppInfo;
 use crate::dpname::DPName;
 use std::alloc::{alloc, Layout};
+use std::cell::RefCell;
 
 use crate::dpcompound_address_element::DPCompoundAddressElement;
 use crate::dplconnection::{DPLConnection, DPOPEN_CREATE, DPOPEN_JOIN};
@@ -39,6 +40,14 @@ pub struct AppInfo {
 pub struct ServiceProvider {
     sp_name: String,
     sp_guid: GUID,
+}
+
+pub struct SessionInfo {
+    selected_app: Option<AppInfo>,
+    selected_service_provider: Option<ServiceProvider>,
+    session_name: String,
+    player_name: String,
+    host_session: bool,
 }
 
 // Ideally these should be passed as context to the callback functions
@@ -187,9 +196,13 @@ fn create_addr(
 
 slint::include_modules!();
 fn main() -> Result<()> {
-    let mut selected_app: Option<AppInfo> = None;
-    let mut selected_service_provider: Option<ServiceProvider> = None;
-    let mut is_host: bool = true;
+    let session_info: Rc<RefCell<SessionInfo>> = Rc::new(RefCell::new(SessionInfo {
+        selected_app: None,
+        selected_service_provider: None,
+        session_name: String::new(),
+        player_name: String::new(),
+        host_session: true,
+    }));
 
     unsafe {
         let app_window = AppWindow::new().unwrap();
@@ -197,17 +210,21 @@ fn main() -> Result<()> {
         CoInitialize(None).ok()?;
 
         let dp: IDirectPlay4A = CoCreateInstance(&CLSID_DIRECT_PLAY, None, CLSCTX_ALL)?;
-        let dp_lobby: IDirectPlayLobby3A =
-            CoCreateInstance(&CLSID_DIRECT_PLAY_LOBBY, None, CLSCTX_ALL)?;
+        let dp_lobby: Rc<RefCell<IDirectPlayLobby3A>> =
+            Rc::new(RefCell::new(CoCreateInstance(&CLSID_DIRECT_PLAY_LOBBY, None, CLSCTX_ALL)?));
 
-        enum_local_applications(&dp_lobby, enum_app, HWND::default(), 0).ok()?;
+        enum_local_applications(&dp_lobby.borrow(), enum_app, HWND::default(), 0).ok()?;
 
         enum_connections(&dp, std::ptr::null(), enum_sp, HWND::default(), 0).ok()?;
 
         // Create a String array from APPLICATIONS app_name
         let app_names: Vec<SharedString> = APPLICATIONS.iter().map(|app| app.app_name.clone().into()).collect();
+        let first_app_name = app_names.get(0).unwrap().clone();
         let app_names = Rc::new(VecModel::from(app_names));
         app_window.set_application_names(app_names.clone().into());
+        app_window.set_selected_application_name(first_app_name.clone());
+        // TODO: Change this to a dedicated method
+        session_info.borrow_mut().selected_app = get_selected_application(app_window.get_selected_application_name().as_str());
 
         // Create a String array from SERVICE_PROVIDERS sp_name
         let sp_names: Vec<SharedString> = SERVICE_PROVIDERS.iter().map(|sp| sp.sp_name.clone().into()).collect();
@@ -218,19 +235,41 @@ fn main() -> Result<()> {
         app_window.set_selected_service_provider_name(first_sp_name.clone());
         app_window.set_address_type(set_address_type(first_sp_name.as_str()));
 
+        // TODO: Change this to a dedicated method
+        session_info.borrow_mut().selected_service_provider = get_selected_service_provider(app_window.get_selected_service_provider_name().as_str());
+
+        let session_info_app_weak = session_info.clone();
+
         app_window.on_change_selected_application(move |value| {
-            selected_app = get_selected_application(&value);
+            session_info_app_weak.borrow_mut().selected_app = get_selected_application(&value);
+        });
+
+        let app_window_address_type_weak = app_window.as_weak();
+        let session_info_service_provider_weak = session_info.clone();
+
+        app_window.on_change_selected_service_provider(move |value| {
+            let app_window = app_window_address_type_weak.unwrap();
+            session_info_service_provider_weak.borrow_mut().selected_service_provider = get_selected_service_provider(&value);
+            app_window.set_address_type(set_address_type(&value));
         });
 
         let app_window_weak = app_window.as_weak();
 
-        app_window.on_change_selected_service_provider(move |value| {
+        app_window.on_click_run_application(move || {
             let app_window = app_window_weak.unwrap();
-            selected_service_provider = get_selected_service_provider(&value);
-            app_window.set_address_type(set_address_type(&value));
-        });
+            let mut session_info = session_info.borrow_mut();
 
-        //launch_direct_play_application(dp_lobby)?;
+            session_info.player_name = app_window.get_player_name().parse().unwrap();
+            session_info.session_name = app_window.get_session_name().parse().unwrap();
+            session_info.host_session = app_window.get_is_host();
+
+            let result = launch_direct_play_application(&dp_lobby.borrow(), &session_info, &app_window);
+            if let Err(error) = result {
+                app_window.set_status("Failed to launch application".into());
+
+                println!("Error: {:?}", error);
+            }
+        });
 
         app_window.run().unwrap();
     }
@@ -259,8 +298,11 @@ fn get_selected_service_provider(sp_name: &str) -> Option<ServiceProvider> {
     }
 }
 
-fn launch_direct_play_application(dp_lobby: IDirectPlayLobby3A) -> Result<()> {
-    let mut guid_service_provider = unsafe { SERVICE_PROVIDERS.first().unwrap().sp_guid };
+fn launch_direct_play_application(dp_lobby: &IDirectPlayLobby3A, session_info: &SessionInfo, app_window: &AppWindow) -> Result<()> {
+    let mut guid_service_provider = session_info.selected_service_provider.clone().ok_or_else(|| Error::new(E_FAIL, "No service provider selected"))?.sp_guid;
+    let app_guid = session_info.selected_app.clone().ok_or_else(|| Error::new(E_FAIL, "No application selected"))?.app_guid;
+
+    app_window.set_status("Launching application...".into());
 
     let (address, address_size) = create_addr(
         HWND::default(),
@@ -270,32 +312,15 @@ fn launch_direct_play_application(dp_lobby: IDirectPlayLobby3A) -> Result<()> {
         std::ptr::null_mut(),
     )?;
 
-    // TODO: Get the player name from somewhere
-    let player_name = s!("");
-
-    // TODO: Get if we're hosting or joining from somewhere
-    let host = true;
-
-    // TODO: Get the session name from somewhere
-    let mut session_name: PCSTR = PCSTR::null();
-
-    if host {
-        session_name = s!("");
-    }
-
-    let app_guid = unsafe { APPLICATIONS.first().unwrap().app_guid };
-
-    println!("App GUID: {:?}", app_guid);
-
     run_app(
         &dp_lobby,
         app_guid,
         guid_service_provider,
         address,
         address_size,
-        session_name,
-        player_name,
-        host,
+        PCSTR(format!("{}\0", session_info.session_name).as_ptr()),
+        PCSTR(format!("{}\0", session_info.player_name).as_ptr()),
+        session_info.host_session,
     )?;
 
     Ok(())
@@ -315,11 +340,10 @@ fn run_app(
         size: std::mem::size_of::<DPSessionDesc2>() as u32,
         flags: 0,
         guid_instance: SESSION_GUID,
-        // TODO: We just use the first application for now
         guid_application: application_guid,
         max_players: 0,
         current_players: 0,
-        session_name: session_name,
+        session_name,
         password: PCSTR::null(),
         reserved_data_1: std::ptr::null_mut(),
         reserved_data_2: std::ptr::null_mut(),
@@ -351,22 +375,7 @@ fn run_app(
 
     let mut app_id: u32 = 0;
 
-    unsafe {
-        println!("Running application");
-        println!("Session Info: {:?}", session_info);
-        println!("Session Name: {}", session_info.session_name.to_string()?);
-        println!("Player Name: {:?}", player_name);
-        println!("Short name: {}", player_name.short_name.to_string()?);
-        println!("Long name: {}", player_name.long_name.to_string()?);
-        println!("Connect Info: {:?}", connect_info);
-
-        run_application(dp_lobby, 0, &mut app_id, &connect_info, std::ptr::null()).ok()?;
-
-        // We must wait for the app to start before we can close ours
-        // But 5 seconds should be good enough for now
-        // TODO: Wait for a success event from the app
-        std::thread::sleep(std::time::Duration::from_secs(5));
-    }
+    run_application(dp_lobby, 0, &mut app_id, &connect_info, std::ptr::null())?;
 
     Ok(())
 }

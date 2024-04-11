@@ -10,6 +10,7 @@ export enum AddressType {
 export component AppWindow inherits Window {
     in property <[string]> application_names;
     in property <[string]> service_provider_names;
+    in-out property <string> selected_application_name;
     in-out property <string> selected_service_provider_name;
     out property <string> player_name;
     out property <string> session_name;
@@ -22,6 +23,7 @@ export component AppWindow inherits Window {
 
     callback change-selected-application(string);
     callback change-selected-service-provider(string);
+    callback click-run-application();
 
     min-width: 500px;
 
@@ -39,6 +41,7 @@ export component AppWindow inherits Window {
                 model: application_names.length > 0 ? application_names : ["No applications"];
                 selected(application_name) => {
                     root.change-selected-application(application-name);
+                    root.selected_application_name = application_name;
                 }
             }
         }
@@ -180,6 +183,9 @@ export component AppWindow inherits Window {
             Button {
                 text: "Run Application";
                 width: 150px;
+                clicked => {
+                    root.click-run-application();
+                }
             }
         }
     }

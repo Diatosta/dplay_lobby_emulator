@@ -2,7 +2,7 @@ use crate::dpcompound_address_element::DPCompoundAddressElement;
 use crate::dplconnection::DPLConnection;
 use crate::DPLAppInfo;
 use std::ffi::c_void;
-use windows::core::{interface, IUnknown, IUnknown_Vtbl, GUID, HRESULT};
+use windows::core::{interface, IUnknown, IUnknown_Vtbl, GUID, HRESULT, Error};
 use windows::Win32::Foundation::{BOOL, HWND};
 
 #[interface("2DB72491-652C-11d1-A7A8-0000F803ABFC")]
@@ -105,14 +105,14 @@ pub unsafe fn create_address(
     )
 }
 
-pub unsafe fn run_application(
+pub fn run_application(
     direct_play_3: &IDirectPlayLobby3A,
     flags: u32,
     dw_app_id: *mut u32,
     lp_connection: *const DPLConnection,
     receive_event: *const c_void,
-) -> HRESULT {
-    direct_play_3.run_application(flags, dw_app_id, lp_connection, receive_event)
+) -> Result<(), Error> {
+    unsafe { direct_play_3.run_application(flags, dw_app_id, lp_connection, receive_event) }.ok()
 }
 
 pub unsafe fn create_compound_address(
