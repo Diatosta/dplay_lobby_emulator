@@ -1,7 +1,10 @@
 use crate::dpname::DPName;
 use std::ffi::c_void;
 use windows::core::*;
-use windows::Win32::Foundation::{BOOL, HWND};
+use windows::Win32::Foundation::BOOL;
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+
+const CLSID_DIRECT_PLAY: GUID = GUID::from_u128(0xD1EB6D20_8923_11d0_9D97_00A0C90A43CB);
 
 #[interface("0AB1C531-4745-11D1-A7A1-0000F803ABFC")]
 pub unsafe trait IDirectPlay4A: IUnknown {
@@ -53,26 +56,39 @@ pub unsafe trait IDirectPlay4A: IUnknown {
             u32,
             *const DPName,
             u32,
-            *const c_void,
+            *mut c_void,
         ) -> BOOL,
-        lp_context: HWND,
+        lp_context: *mut c_void,
         dw_flags: u32,
     ) -> HRESULT;
 }
 
-pub unsafe fn enum_connections(
-    direct_play_4: &IDirectPlay4A,
-    lp_guid_application: *const GUID,
-    lp_enum_callback: extern "system" fn(
-        *const GUID,
-        *const c_void,
-        u32,
-        *const DPName,
-        u32,
-        *const c_void,
-    ) -> BOOL,
-    lp_context: HWND,
-    dw_flags: u32,
-) -> HRESULT {
-    direct_play_4.enum_connections(lp_guid_application, lp_enum_callback, lp_context, dw_flags)
+pub struct DirectPlay4A {
+    pub dp: IDirectPlay4A,
+}
+
+impl DirectPlay4A {
+    pub fn new() -> Result<Self> {
+        let dp = unsafe { CoCreateInstance(&CLSID_DIRECT_PLAY, None, CLSCTX_ALL) }?;
+        Ok(Self { dp })
+    }
+
+    pub unsafe fn enum_connections<T>(
+        &self,
+        guid_application: *const GUID,
+        enum_callback: extern "system" fn(
+            *const GUID,
+            *const c_void,
+            u32,
+            *const DPName,
+            u32,
+            *mut c_void,
+        ) -> BOOL,
+        context: *mut Vec<T>,
+        flags: u32,
+    ) -> HRESULT {
+        let context_ptr = std::mem::transmute::<*mut Vec<T>, *mut c_void>(context);
+
+        self.dp.enum_connections(guid_application, enum_callback, context_ptr, flags)
+    }
 }
