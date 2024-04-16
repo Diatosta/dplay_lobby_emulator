@@ -25,11 +25,6 @@ use windows::{
     Win32::{Foundation::*, System::Com::*},
 };
 
-// TODO: Move this to DPLobby
-const DPAID_SERVICE_PROVIDER: GUID = GUID::from_u128(0x07D916C0_E0AF_11cf_9C4E_00A0C905425E);
-const DPAID_INET: GUID = GUID::from_u128(0xC4A54DA0_E0AF_11cf_9C4E_00A0C905425E);
-const DPAID_PHONE: GUID = GUID::from_u128(0x78EC89A0_E0AF_11cf_9C4E_00A0C905425E);
-
 const SESSION_GUID: GUID = GUID::from_u128(0xA88F6634_2BA5_4986_99B2_A65CB5EC739C);
 
 #[derive(Debug, Clone)]
@@ -84,16 +79,15 @@ fn main() -> Result<()> {
         dp.enum_connections(std::ptr::null(), enum_sp, &mut service_providers, 0)
             .ok()?;
 
-        // Create a String array from APPLICATIONS app_name
         let app_names: Vec<SharedString> = applications
             .iter()
             .map(|app| app.app_name.clone().into())
             .collect();
-        let first_app_name = app_names.get(0).unwrap().clone();
+
+        let first_app_name = app_names.get(0).cloned().unwrap_or_default();
         let app_names = Rc::new(VecModel::from(app_names));
         app_window.set_application_names(app_names.clone().into());
         app_window.set_selected_application_name(first_app_name.clone());
-        // TODO: Change this to a dedicated method
         session_info.borrow_mut().selected_app = get_selected_application(
             app_window.get_selected_application_name().as_str(),
             &mut applications,
@@ -103,53 +97,64 @@ fn main() -> Result<()> {
             .iter()
             .map(|sp| sp.sp_name.clone().into())
             .collect();
-        let first_sp_name = sp_names.get(0).unwrap().clone();
+
+        let first_sp_name = sp_names.get(0).cloned().unwrap_or_default();
         let sp_names = Rc::new(VecModel::from(sp_names));
         app_window.set_service_provider_names(sp_names.clone().into());
 
         app_window.set_selected_service_provider_name(first_sp_name.clone());
         app_window.set_address_type(set_address_type(first_sp_name.as_str()));
 
-        // TODO: Change this to a dedicated method
-        session_info.borrow_mut().selected_service_provider =
-            get_selected_service_provider(app_window.get_selected_service_provider_name().as_str(), &mut service_providers);
+        session_info.borrow_mut().selected_service_provider = get_selected_service_provider(
+            app_window.get_selected_service_provider_name().as_str(),
+            &mut service_providers,
+        );
 
-        let session_info_app_weak = session_info.clone();
+        {
+            let session_info = session_info.clone();
 
-        app_window.on_change_selected_application(move |value| {
-            session_info_app_weak.borrow_mut().selected_app =
-                get_selected_application(&value, &mut applications);
-        });
+            app_window.on_change_selected_application(move |value| {
+                session_info.borrow_mut().selected_app =
+                    get_selected_application(&value, &mut applications);
+            });
+        }
 
-        let app_window_address_type_weak = app_window.as_weak();
-        let session_info_service_provider_weak = session_info.clone();
+        {
+            let session_info = session_info.clone();
+            let app_window_weak = app_window.as_weak();
 
-        app_window.on_change_selected_service_provider(move |value| {
-            let app_window = app_window_address_type_weak.unwrap();
-            session_info_service_provider_weak
-                .borrow_mut()
-                .selected_service_provider = get_selected_service_provider(&value, &mut service_providers);
-            app_window.set_address_type(set_address_type(&value));
-        });
+            app_window.on_change_selected_service_provider(move |value| {
+                let app_window = app_window_weak.unwrap();
+                session_info.borrow_mut().selected_service_provider =
+                    get_selected_service_provider(&value, &mut service_providers);
+                app_window.set_address_type(set_address_type(&value));
+            });
+        }
 
-        let app_window_weak = app_window.as_weak();
+        {
+            let app_window_weak = app_window.as_weak();
 
-        app_window.on_click_run_application(move || {
-            let app_window = app_window_weak.unwrap();
-            let mut session_info = session_info.borrow_mut();
+            app_window.on_click_run_application(move || {
+                let app_window = app_window_weak.unwrap();
+                let mut session_info = session_info.borrow_mut();
 
-            session_info.player_name = app_window.get_player_name().parse().unwrap();
-            session_info.session_name = app_window.get_session_name().parse().unwrap();
-            session_info.host_session = app_window.get_is_host();
+                session_info.player_name = app_window.get_player_name().to_string();
+                session_info.session_name = app_window.get_session_name().to_string();
+                session_info.host_session = app_window.get_is_host();
 
-            let result =
-                launch_direct_play_application(&dp_lobby.borrow(), &session_info, &app_window, &mut address_types);
-            if let Err(error) = result {
-                app_window.set_status("Failed to launch application".into());
+                let result = launch_direct_play_application(
+                    &dp_lobby.borrow(),
+                    &session_info,
+                    &app_window,
+                    &mut address_types,
+                );
+                if let Err(error) = result {
+                    app_window.set_status("Failed to launch application".into());
 
-                println!("Error: {:?}", error);
-            }
-        });
+                    println!("Error: {:?}", error);
+                }
+            });
+        }
 
         app_window.run().unwrap();
     }
@@ -243,15 +248,11 @@ fn create_addr(
     app_window: &AppWindow,
 ) -> Result<(*mut c_void, u32)> {
     let mut address_elements: Vec<DPCompoundAddressElement> = Vec::new();
-    let address_types_ptr = unsafe { std::mem::transmute::<*mut Vec<GUID>, *mut c_void>(address_types) };
+    let address_types_ptr =
+        unsafe { std::mem::transmute::<*mut Vec<GUID>, *mut c_void>(address_types) };
 
     dp_lobby
-        .enum_address_types(
-            enum_addr_types,
-            service_provider_guid,
-            address_types_ptr,
-            0,
-        )
+        .enum_address_types(enum_addr_types, service_provider_guid, address_types_ptr, 0)
         .ok()?;
 
     address_elements.push(DPCompoundAddressElement {
@@ -260,7 +261,9 @@ fn create_addr(
         data: unsafe { std::mem::transmute::<&mut GUID, *const c_void>(service_provider_guid) },
     });
 
-    let guid_address_type = address_types.get(0).ok_or(Error::new(E_FAIL, "No address types found"))?;
+    let guid_address_type = address_types
+        .get(0)
+        .ok_or(Error::new(E_FAIL, "No address types found"))?;
 
     match guid_address_type {
         &DPAID_INET => {
@@ -342,7 +345,10 @@ fn get_selected_application(app_name: &str, applications: &mut Vec<AppInfo>) -> 
         .cloned()
 }
 
-fn get_selected_service_provider(sp_name: &str, service_providers: &mut Vec<ServiceProvider>) -> Option<ServiceProvider> {
+fn get_selected_service_provider(
+    sp_name: &str,
+    service_providers: &mut Vec<ServiceProvider>,
+) -> Option<ServiceProvider> {
     service_providers
         .iter()
         .find(|sp| sp.sp_name == sp_name)
