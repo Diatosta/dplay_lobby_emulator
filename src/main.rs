@@ -73,11 +73,9 @@ fn main() -> Result<()> {
 
         dp_lobby
             .borrow()
-            .enum_local_applications(enum_app, &mut applications, 0)
-            .ok()?;
+            .enum_local_applications(enum_app, &mut applications, 0)?;
 
-        dp.enum_connections(std::ptr::null(), enum_sp, &mut service_providers, 0)
-            .ok()?;
+        dp.enum_connections(std::ptr::null(), enum_sp, &mut service_providers, 0)?;
 
         let app_names: Vec<SharedString> = applications
             .iter()
@@ -248,12 +246,13 @@ fn create_addr(
     app_window: &AppWindow,
 ) -> Result<(*mut c_void, u32)> {
     let mut address_elements: Vec<DPCompoundAddressElement> = Vec::new();
-    let address_types_ptr =
-        unsafe { std::mem::transmute::<*mut Vec<GUID>, *mut c_void>(address_types) };
 
-    dp_lobby
-        .enum_address_types(enum_addr_types, service_provider_guid, address_types_ptr, 0)
-        .ok()?;
+    dp_lobby.enum_address_types::<Vec<GUID>>(
+        enum_addr_types,
+        service_provider_guid,
+        address_types,
+        0,
+    )?;
 
     address_elements.push(DPCompoundAddressElement {
         guid_data_type: DPAID_SERVICE_PROVIDER,
@@ -317,14 +316,12 @@ fn create_addr(
 
     let address = unsafe { alloc(layout) } as *mut c_void;
 
-    dp_lobby
-        .create_compound_address(
-            address_elements.as_ptr(),
-            address_elements.len() as u32,
-            address,
-            &mut address_size,
-        )
-        .ok()?;
+    dp_lobby.create_compound_address(
+        address_elements.as_ptr(),
+        address_elements.len() as u32,
+        address,
+        &mut address_size,
+    )?;
 
     Ok((address, address_size))
 }

@@ -73,7 +73,7 @@ impl DirectPlay4A {
         Ok(Self { dp })
     }
 
-    pub unsafe fn enum_connections<T>(
+    pub fn enum_connections<T>(
         &self,
         guid_application: *const GUID,
         enum_callback: extern "system" fn(
@@ -84,11 +84,15 @@ impl DirectPlay4A {
             u32,
             *mut c_void,
         ) -> BOOL,
-        context: *mut Vec<T>,
+        context: *mut T,
         flags: u32,
-    ) -> HRESULT {
-        let context_ptr = std::mem::transmute::<*mut Vec<T>, *mut c_void>(context);
+    ) -> Result<()> {
+        unsafe {
+            let context = std::mem::transmute::<*mut T, *mut c_void>(context);
 
-        self.dp.enum_connections(guid_application, enum_callback, context_ptr, flags)
+            self.dp
+                .enum_connections(guid_application, enum_callback, context, flags)
+        }
+        .ok()
     }
 }

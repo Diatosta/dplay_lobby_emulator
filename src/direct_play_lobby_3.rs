@@ -2,7 +2,7 @@ use crate::dpcompound_address_element::DPCompoundAddressElement;
 use crate::dplconnection::DPLConnection;
 use crate::DPLAppInfo;
 use std::ffi::c_void;
-use windows::core::{interface, Error, IUnknown, IUnknown_Vtbl, GUID, HRESULT};
+use windows::core::*;
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
@@ -67,40 +67,50 @@ pub struct DirectPlayLobby3A {
 }
 
 impl DirectPlayLobby3A {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new() -> Result<Self> {
         let dp_lobby = unsafe { CoCreateInstance(&CLSID_DIRECT_PLAY_LOBBY, None, CLSCTX_ALL) }?;
         Ok(Self { dp_lobby })
     }
 
-    pub fn enum_address_types(
+    pub fn enum_address_types<T>(
+        &self,
+        lp_enum_address_type_callback: extern "system" fn(*const GUID, *mut c_void, u32) -> BOOL,
+        guid_sp: &mut GUID,
+        context: &mut T,
+        flags: u32,
+    ) -> Result<()> {
+        let context = unsafe { std::mem::transmute::<*mut T, *mut c_void>(context) };
+
+        self.enum_address_types_impl(lp_enum_address_type_callback, guid_sp, context, flags)
+            .ok()
+    }
+
+    fn enum_address_types_impl(
         &self,
         lp_enum_address_type_callback: extern "system" fn(*const GUID, *mut c_void, u32) -> BOOL,
         guid_sp: *mut GUID,
         context: *mut c_void,
-        dw_flags: u32,
+        flags: u32,
     ) -> HRESULT {
         unsafe {
-            self.dp_lobby.enum_address_types(
-                lp_enum_address_type_callback,
-                guid_sp,
-                context,
-                dw_flags,
-            )
+            self.dp_lobby
+                .enum_address_types(lp_enum_address_type_callback, guid_sp, context, flags)
         }
     }
 
     pub fn enum_local_applications<T>(
         &self,
         lp_enum_local_app_callback: extern "system" fn(*const DPLAppInfo, *mut c_void, u32) -> BOOL,
-        context: &mut Vec<T>,
-        dw_flags: u32,
-    ) -> HRESULT {
+        context: &mut T,
+        flags: u32,
+    ) -> Result<()> {
         unsafe {
-            let context_ptr = std::mem::transmute::<*mut Vec<T>, *mut c_void>(context);
+            let context = std::mem::transmute::<*mut T, *mut c_void>(context);
 
             self.dp_lobby
-                .enum_local_applications(lp_enum_local_app_callback, context_ptr, dw_flags)
+                .enum_local_applications(lp_enum_local_app_callback, context, flags)
         }
+        .ok()
     }
 
     pub fn run_application(
@@ -109,7 +119,7 @@ impl DirectPlayLobby3A {
         dw_app_id: *mut u32,
         lp_connection: *const DPLConnection,
         receive_event: *const c_void,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         unsafe {
             self.dp_lobby
                 .run_application(flags, dw_app_id, lp_connection, receive_event)
@@ -123,10 +133,11 @@ impl DirectPlayLobby3A {
         element_count: u32,
         address: *mut c_void,
         address_size: *mut u32,
-    ) -> HRESULT {
+    ) -> Result<()> {
         unsafe {
             self.dp_lobby
                 .create_compound_address(elements, element_count, address, address_size)
         }
+        .ok()
     }
 }
