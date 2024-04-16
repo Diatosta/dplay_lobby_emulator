@@ -8,7 +8,8 @@ export enum AddressType {
 }
 
 export component AppWindow inherits Window {
-    title: "DirectPlay Launcher";
+    title: @tr("DirectPlay Launcher");
+    icon: @image-url("icon.png");
 
     in property <[string]> application_names;
     in property <[string]> service_provider_names;

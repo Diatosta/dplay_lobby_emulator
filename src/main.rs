@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod direct_play_4;
 mod direct_play_lobby_3;
 mod dpcompound_address_element;
