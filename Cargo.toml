@@ -11,6 +11,7 @@ slint = "1.5.1"
 
 [build-dependencies]
 slint-build = "1.5.1"
+winres = "0.1.12"
 
 [dependencies.windows]
 version = "0.54.0"
