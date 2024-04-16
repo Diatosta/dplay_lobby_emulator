@@ -154,6 +154,15 @@ fn main() -> Result<()> {
             });
         }
 
+        {
+            let app_window_weak = app_window.as_weak();
+
+            app_window.on_close_app(move || {
+                CoUninitialize();
+                let _ = app_window_weak.unwrap().hide();
+            });
+        }
+
         app_window.run().unwrap();
     }
 

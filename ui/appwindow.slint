@@ -8,6 +8,8 @@ export enum AddressType {
 }
 
 export component AppWindow inherits Window {
+    title: "DirectPlay Launcher";
+
     in property <[string]> application_names;
     in property <[string]> service_provider_names;
     in-out property <string> selected_application_name;
@@ -24,6 +26,7 @@ export component AppWindow inherits Window {
     callback change-selected-application(string);
     callback change-selected-service-provider(string);
     callback click-run-application();
+    callback close-app();
 
     min-width: 500px;
 
@@ -185,6 +188,19 @@ export component AppWindow inherits Window {
                 width: 150px;
                 clicked => {
                     root.click-run-application();
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: end;
+            height: 50px;
+
+            Button {
+                text: "Quit";
+                width: 150px;
+                clicked => {
+                    root.close-app();
                 }
             }
         }
