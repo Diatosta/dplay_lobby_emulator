@@ -13,16 +13,8 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v4
+    - uses: moonrepo/setup-rust@v1
       with:
-        toolchain: stable
-        target: i686-pc-windows-msvc
-        override: true
-        
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target i686-pc-windows-msvc
+        targets: i686-pc-windows-msvc
+    - run: cargo build --release --target i686-pc-windows-msvc
