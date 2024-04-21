@@ -31,4 +31,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --release --target i686-pc-windows-msvc
+        args: --release --target i686-pc-windows-msvc RUST_BACKTRACE=1
