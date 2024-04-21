@@ -20,6 +20,12 @@ jobs:
         toolchain: stable
         target: i686-pc-windows-msvc
         override: true
+
+    - name: Get directory
+      run: ls
+
+    - name: Get slint directory
+      run: ls ui
         
     - name: Build
       uses: actions-rs/cargo@v1
