@@ -84,7 +84,7 @@ fn main() -> Result<()> {
             .map(|app| app.app_name.clone().into())
             .collect();
 
-        let first_app_name = app_names.get(0).cloned().unwrap_or_default();
+        let first_app_name = app_names.first().cloned().unwrap_or_default();
         let app_names = Rc::new(VecModel::from(app_names));
         app_window.set_application_names(app_names.clone().into());
         app_window.set_selected_application_name(first_app_name.clone());
@@ -98,7 +98,7 @@ fn main() -> Result<()> {
             .map(|sp| sp.sp_name.clone().into())
             .collect();
 
-        let first_sp_name = sp_names.get(0).cloned().unwrap_or_default();
+        let first_sp_name = sp_names.first().cloned().unwrap_or_default();
         let sp_names = Rc::new(VecModel::from(sp_names));
         app_window.set_service_provider_names(sp_names.clone().into());
 
@@ -268,15 +268,14 @@ fn create_addr(
     address_elements.push(DPCompoundAddressElement {
         guid_data_type: DPAID_SERVICE_PROVIDER,
         data_size: std::mem::size_of::<GUID>() as u32,
-        data: unsafe { std::mem::transmute::<&mut GUID, *const c_void>(service_provider_guid) },
+        data: service_provider_guid as *mut GUID as *const std::ffi::c_void,
     });
 
-    let guid_address_type = address_types
-        .get(0)
+    let guid_address_type = address_types.first()
         .ok_or(Error::new(E_FAIL, "No address types found"))?;
 
-    match guid_address_type {
-        &DPAID_INET => {
+    match *guid_address_type {
+        DPAID_INET => {
             if let Ok(data) = CString::new(app_window.get_ip_address().as_str()) {
                 address_elements.push(DPCompoundAddressElement {
                     guid_data_type: DPAID_INET,
@@ -287,7 +286,7 @@ fn create_addr(
                 return Err(Error::new(E_FAIL, "Failed to get IP address"));
             }
         }
-        &DPAID_PHONE => {
+        DPAID_PHONE => {
             if let Ok(data) = CString::new(app_window.get_phone_number().as_str()) {
                 address_elements.push(DPCompoundAddressElement {
                     guid_data_type: DPAID_PHONE,
@@ -346,7 +345,7 @@ fn set_address_type(sp_name: &str) -> slint_generatedAppWindow::AddressType {
     }
 }
 
-fn get_selected_application(app_name: &str, applications: &mut Vec<AppInfo>) -> Option<AppInfo> {
+fn get_selected_application(app_name: &str, applications: &mut [AppInfo]) -> Option<AppInfo> {
     applications
         .iter()
         .find(|app| app.app_name == app_name)
@@ -355,7 +354,7 @@ fn get_selected_application(app_name: &str, applications: &mut Vec<AppInfo>) -> 
 
 fn get_selected_service_provider(
     sp_name: &str,
-    service_providers: &mut Vec<ServiceProvider>,
+    service_providers: &mut [ServiceProvider],
 ) -> Option<ServiceProvider> {
     service_providers
         .iter()
@@ -374,30 +373,22 @@ fn launch_direct_play_application(
         .clone()
         .ok_or_else(|| Error::new(E_FAIL, "No service provider selected"))?
         .sp_guid;
-    let app_guid = session_info
-        .selected_app
-        .clone()
-        .ok_or_else(|| Error::new(E_FAIL, "No application selected"))?
-        .app_guid;
 
     app_window.set_status("Launching application...".into());
 
+    // If this fails, ignore it and just set address and address_size to null
     let (address, address_size) = create_addr(
-        &dp_lobby,
+        dp_lobby,
         &mut guid_service_provider,
         address_types,
-        &app_window,
-    )?;
+        app_window,
+    ).unwrap_or((std::ptr::null_mut(), 0));
 
     run_app(
-        &dp_lobby,
-        app_guid,
-        guid_service_provider,
+        dp_lobby,
         address,
         address_size,
-        PCSTR(format!("{}\0", session_info.session_name).as_ptr()),
-        PCSTR(format!("{}\0", session_info.player_name).as_ptr()),
-        session_info.host_session,
+        session_info,
     )?;
 
     app_window.set_status("Launch successful".into());
@@ -407,22 +398,35 @@ fn launch_direct_play_application(
 
 fn run_app(
     dp_lobby: &DirectPlayLobby3A,
-    application_guid: GUID,
-    service_provider_guid: GUID,
     address: *mut c_void,
     address_size: u32,
-    session_name: PCSTR,
-    player_name: PCSTR,
-    host_session: bool,
+    session_info: &SessionInfo,
 ) -> Result<()> {
-    let session_info = DPSessionDesc2 {
+    let selected_app_guid = session_info
+        .selected_app
+        .clone()
+        .ok_or_else(|| Error::new(E_FAIL, "No application selected"))?.app_guid;
+
+    let service_provider_guid = session_info
+        .selected_service_provider
+        .clone()
+        .ok_or_else(|| Error::new(E_FAIL, "No service provider selected"))?
+        .sp_guid;
+
+    let player_name_cstring = CString::new(session_info.player_name.as_str()).unwrap();
+    let player_name_cstring = PCSTR(player_name_cstring.as_ptr() as *const u8);
+
+    let session_name_cstring = CString::new(session_info.session_name.as_str()).unwrap();
+    let session_name_cstring = PCSTR(session_name_cstring.as_ptr() as *const u8);
+
+    let session_desc = DPSessionDesc2 {
         size: std::mem::size_of::<DPSessionDesc2>() as u32,
         flags: 0,
         guid_instance: SESSION_GUID,
-        guid_application: application_guid,
+        guid_application: selected_app_guid,
         max_players: 0,
         current_players: 0,
-        session_name,
+        session_name: session_name_cstring,
         password: PCSTR::null(),
         reserved_data_1: std::ptr::null_mut(),
         reserved_data_2: std::ptr::null_mut(),
@@ -435,17 +439,17 @@ fn run_app(
     let player_name = DPName {
         size: std::mem::size_of::<DPName>() as u32,
         flags: 0,
-        short_name: player_name,
-        long_name: player_name,
+        short_name: player_name_cstring,
+        long_name: player_name_cstring,
     };
 
     let connect_info = DPLConnection {
         size: std::mem::size_of::<DPLConnection>() as u32,
-        flags: match host_session {
+        flags: match session_info.host_session {
             true => DPOPEN_CREATE,
             false => DPOPEN_JOIN,
         },
-        session_desc: &session_info,
+        session_desc: &session_desc,
         player_name: &player_name,
         guid_sp: service_provider_guid,
         address,

@@ -4,7 +4,7 @@ use windows::core::*;
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 
-const CLSID_DIRECT_PLAY: GUID = GUID::from_u128(0xD1EB6D20_8923_11d0_9D97_00A0C90A43CB);
+const CLSID_DIRECT_PLAY: GUID = GUID::from_u128(0xD1EB6D20_8923_11D0_9D97_00A0C90A43CB);
 
 #[interface("0AB1C531-4745-11D1-A7A1-0000F803ABFC")]
 pub unsafe trait IDirectPlay4A: IUnknown {
